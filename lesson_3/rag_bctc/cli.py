@@ -1,60 +1,130 @@
 import os
 import argparse
 from pathlib import Path
-from vector_store import QdrantVectorStore
-from pdf_processor import load_and_split_pdf
+from src.vector_storage import QdrantVectorStore
+from src.pdf_processor import load_and_split_pdf
+from dotenv import load_dotenv
 
-def ingest_pdfs(pdf_dir: str, collection_name: str = "pdf_documents"):
+load_dotenv()
+def create_collection(collection_name: str) -> bool:
     """
-    Ingest all PDFs from a directory into the vector database.
+    Create a new Qdrant collection.
+    
+    Args:
+        collection_name (str): Name of the collection to create
+    """
+    try:
+        vector_store = QdrantVectorStore(collection_name=collection_name)
+        success = vector_store.create_collection()
+        if success:
+            print(f"Successfully created collection: {collection_name}")
+        return success
+    except Exception as e:
+        print(f"Error creating collection: {str(e)}")
+        return False
+
+def delete_collection(collection_name: str) -> bool:
+    """
+    Delete a Qdrant collection.
+    
+    Args:
+        collection_name (str): Name of the collection to delete
+    """
+    try:
+        vector_store = QdrantVectorStore(collection_name=collection_name)
+        success = vector_store.delete_collection()
+        if success:
+            print(f"Successfully deleted collection: {collection_name}")
+        return success
+    except Exception as e:
+        print(f"Error deleting collection: {str(e)}")
+        return False
+
+def add_documents(pdf_dir: str, collection_name: str) -> bool:
+    """
+    Add documents from PDFs to a Qdrant collection.
     
     Args:
         pdf_dir (str): Directory containing PDF files
-        collection_name (str): Name of the Qdrant collection
+        collection_name (str): Name of the collection to add documents to
     """
-    # Initialize RAG system
-    rag = QdrantVectorStore(collection_name=collection_name)
-    
-    # Get all PDF files
-    pdf_files = list(Path(pdf_dir).glob("**/*.pdf"))
-    
-    if not pdf_files:
-        print(f"No PDF files found in {pdf_dir}")
-        return
-    
-    print(f"Found {len(pdf_files)} PDF files")
-    
-    # Process each PDF
-    for pdf_path in pdf_files:
-        try:
-            print(f"\nProcessing {pdf_path.name}...")
-            documents = load_and_split_pdf(str(pdf_path))
-            print(documents)
-            assert False
-            rag.add_documents(documents)
-            print(f"Successfully processed {pdf_path.name}")
-        except Exception as e:
-            print(f"Error processing {pdf_path.name}: {str(e)}")
+    try:
+        # Initialize vector store
+        vector_store = QdrantVectorStore(collection_name=collection_name)
+        
+        # Get all PDF files
+        pdf_files = list(Path(pdf_dir).glob("**/*.pdf"))
+        
+        if not pdf_files:
+            print(f"No PDF files found in {pdf_dir}")
+            return False
+        
+        print(f"Found {len(pdf_files)} PDF files")
+        
+        # Process each PDF
+        for pdf_path in pdf_files:
+            try:
+                print(f"\nProcessing {pdf_path.name}...")
+                documents = load_and_split_pdf(str(pdf_path))
+                success = vector_store.add_documents(documents)
+                if success:
+                    print(f"Successfully processed {pdf_path.name}")
+                else:
+                    print(f"Failed to process {pdf_path.name}")
+            except Exception as e:
+                print(f"Error processing {pdf_path.name}: {str(e)}")
+        
+        return True
+    except Exception as e:
+        print(f"Error adding documents: {str(e)}")
+        return False
 
 def main():
-    parser = argparse.ArgumentParser(description="Ingest PDFs into the vector database")
-    parser.add_argument(
-        "pdf_dir",
-        help="Directory containing PDF files to ingest"
+    parser = argparse.ArgumentParser(description="Qdrant Vector Store CLI")
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+    
+    # Create collection command
+    create_parser = subparsers.add_parser("create", help="Create a new collection")
+    create_parser.add_argument(
+        "collection_name",
+        help="Name of the collection to create"
     )
-    parser.add_argument(
+    
+    # Delete collection command
+    delete_parser = subparsers.add_parser("delete", help="Delete a collection")
+    delete_parser.add_argument(
+        "collection_name",
+        help="Name of the collection to delete"
+    )
+    
+    # Add documents command
+    add_parser = subparsers.add_parser("add", help="Add documents to a collection")
+    add_parser.add_argument(
+        "pdf_dir",
+        help="Directory containing PDF files to add"
+    )
+    add_parser.add_argument(
         "--collection",
         default="pdf_documents",
-        help="Name of the Qdrant collection (default: pdf_documents)"
+        help="Name of the collection to add documents to (default: pdf_documents)"
     )
     
     args = parser.parse_args()
     
-    if not os.path.exists(args.pdf_dir):
-        print(f"Directory {args.pdf_dir} does not exist")
-        return
+    if args.command == "create":
+        create_collection(args.collection_name)
     
-    ingest_pdfs(args.pdf_dir, args.collection)
+    elif args.command == "delete":
+        delete_collection(args.collection_name)
+    
+    elif args.command == "add":
+        if not os.path.exists(args.pdf_dir):
+            print(f"Error: Directory {args.pdf_dir} does not exist")
+            return
+        add_documents(args.pdf_dir, args.collection)
+    
+    else:
+        parser.print_help()
 
 if __name__ == "__main__":
     main() 

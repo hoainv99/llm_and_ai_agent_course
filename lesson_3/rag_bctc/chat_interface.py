@@ -1,37 +1,23 @@
 import os
 import gradio as gr
-from rag_system import RAGSystem
-from pdf_processor import load_and_split_pdf
+from src.rag_system import RAGSystem
+from src.pdf_processor import load_and_split_pdf
+from dotenv import load_dotenv
 
+load_dotenv()
 class ChatInterface:
     def __init__(self):
         self.rag = None
         self.chat_history = []
+        self.initialize_rag()
         
-    def initialize_rag(self, pdf_file):
-        """Initialize RAG system with the uploaded PDF file"""
-        if pdf_file is None:
-            return "Please upload a PDF file first."
-        
+    def initialize_rag(self):
+        """"""
         try:
-            # Save the uploaded file temporarily
-            temp_path = "data/hpg.pdf"
-            os.makedirs("data", exist_ok=True)
-            with open(temp_path, "wb") as f:
-                f.write(pdf_file.read())
-            
-            # Initialize RAG system
-            self.rag = RAGSystem()
-            documents = load_and_split_pdf(temp_path)
-            print("documents", documents)
-            self.rag.create_vector_store(documents)
+            self.rag = RAGSystem(collection_name=os.getenv("collection_name"),vector_store_type="qdrant")
             self.rag.setup_qa_chain()
-            
-            # Clean up
-            os.remove(temp_path)
-            return "PDF processed successfully! You can now start chatting."
         except Exception as e:
-            return f"Error processing PDF: {str(e)}"
+            return f"Error init RAG system: {str(e)}"
     
     def respond(self, message, history):
         """Generate response for the chat message"""
@@ -39,8 +25,28 @@ class ChatInterface:
             return "Please upload a PDF file first."
         
         try:
-            result = self.rag.query(message)
-            return result['result']
+            # Add current message to history
+            self.chat_history.append({"role": "user", "content": message})
+            
+            # Create context from history
+            history_context = "\n".join([
+                f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
+                for msg in self.chat_history[-5:]  # Use last 5 messages for context
+            ])
+            
+            # Add history context to the query
+            query_with_history = f"""Previous conversation:
+{history_context}
+
+Current question: {message}"""
+            
+            # Get response from RAG system
+            result = self.rag.query(query_with_history)
+            print(result)
+            # Add response to history
+            self.chat_history.append({"role": "assistant", "content": result["result"].content})
+            
+            return result["result"].content
         except Exception as e:
             return f"Error generating response: {str(e)}"
 
