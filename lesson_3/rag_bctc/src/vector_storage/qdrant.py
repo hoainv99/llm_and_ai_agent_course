@@ -1,15 +1,18 @@
 import os
+import uuid
 from typing import List, Dict, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.models import Distance, VectorParams
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_core.documents import Document
+from dotenv import load_dotenv
+load_dotenv()
 
 class QdrantVectorStore:
     def __init__(
         self,
         collection_name: str,
-        vector_size: int = 3072,  # Default for Google's embedding model
         qdrant_url: Optional[str] = None
     ):
         """
@@ -21,17 +24,19 @@ class QdrantVectorStore:
             qdrant_url (str): URL of the Qdrant server
         """
         self.collection_name = collection_name
-        self.vector_size = vector_size
+        self.vector_size = os.getenv("vector_size", 768)
         self.qdrant_url = qdrant_url or os.getenv("QDRANT_URL", "http://localhost:6333")
-        
+        print("qdrant_url",self.qdrant_url)
         # Initialize Qdrant client
         self.client = QdrantClient(url=self.qdrant_url)
         print("model embedding",os.getenv("embedding_model", "models/embedding-001"))
         # Initialize embeddings
         self.embeddings = GoogleGenerativeAIEmbeddings(
             model=os.getenv("embedding_model", "models/embedding-001"),
-            google_api_key=os.getenv("GOOGLE_API_KEY")
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            max_tokens=self.vector_size
         )
+        
     
     def create_collection(self) -> bool:
         """
@@ -83,7 +88,7 @@ class QdrantVectorStore:
             print(f"Error deleting collection: {str(e)}")
             return False
     
-    def add_documents(self, documents: List[Dict]) -> bool:
+    def add_documents(self, documents: List[Document]) -> bool:
         """
         Add documents to the collection.
         
@@ -103,9 +108,10 @@ class QdrantVectorStore:
             for i, doc in enumerate(documents):
                 # Generate embedding for the document text
                 embedding = self.embeddings.embed_query(doc.page_content)
+       
                 # Create point with embedding and metadata
                 point = models.PointStruct(
-                    id=i,
+                    id=str(uuid.uuid4()),
                     vector=embedding,
                     payload={
                         "text": doc.page_content,
@@ -141,7 +147,7 @@ class QdrantVectorStore:
         try:
             # Generate embedding for the query
             query_embedding = self.embeddings.embed_query(query)
-            
+            print("query_embedding",len(query_embedding))
             # Search for similar vectors
             search_result = self.client.search(
                 collection_name=self.collection_name,
@@ -185,40 +191,18 @@ class QdrantVectorStore:
 
 def main():
     # Example usage
-    vector_store = QdrantVectorStore("test_collection")
+    vector_store = QdrantVectorStore("rag")
     
-    # Create collection
-    vector_store.create_collection()
-    
-    # Add some test documents
-    test_documents = [
-        {
-            "text": "This is a test document about artificial intelligence.",
-            "metadata": {"source": "test1", "page": 1}
-        },
-        {
-            "text": "Machine learning is a subset of AI.",
-            "metadata": {"source": "test2", "page": 1}
-        }
-    ]
-    vector_store.add_documents(test_documents)
-    
+
     # Search for similar documents
-    query = "What is AI?"
-    results = vector_store.search(query, k=5)
+    query = "Bộ Giao thông vận tải"
+    results = vector_store.get_relevant_documents(query, k=3)
     
     print("\nSearch Results:")
     for i, result in enumerate(results, 1):
         print(f"\n{i}. Score: {result['score']:.4f}")
         print(f"Text: {result['text']}")
         print(f"Metadata: {result['metadata']}")
-    
-    # Get collection info
-    info = vector_store.get_collection_info()
-    print("\nCollection Info:", info)
-    
-    # Clean up
-    vector_store.delete_collection()
 
 if __name__ == "__main__":
     main() 

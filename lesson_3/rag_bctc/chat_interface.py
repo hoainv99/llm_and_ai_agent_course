@@ -1,7 +1,6 @@
 import os
 import gradio as gr
 from src.rag_system import RAGSystem
-from src.pdf_processor import load_and_split_pdf
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,7 +40,7 @@ class ChatInterface:
 Current question: {message}"""
             
             # Get response from RAG system
-            result = self.rag.query(query_with_history)
+            result = self.rag.query(message)
             print(result)
             # Add response to history
             self.chat_history.append({"role": "assistant", "content": result["result"].content})
@@ -58,29 +57,18 @@ def create_interface():
         gr.Markdown("Upload a PDF file and ask questions about its content.")
         
         with gr.Row():
-            with gr.Column(scale=1):
-                pdf_input = gr.File(label="Upload PDF", file_types=[".pdf"])
-                upload_button = gr.Button("Process PDF")
-                status = gr.Textbox(label="Status", interactive=False)
-            
-            with gr.Column(scale=2):
+            with gr.Column():
                 chatbot = gr.ChatInterface(
                     chat_interface.respond,
                     title="Chat with your PDF",
                     description="Ask questions about your PDF content",
                     theme="soft",
                     examples=[
-                        "What is the main topic of the document?",
-                        "Can you summarize the key points?",
-                        "What are the main findings?"
+                        "Đối tượng áp dụng là những ai?",
+                        "Nội dung bao gồm những điều gì?",
+                        "Điều 10 nói về điều gì?"
                     ]
                 )
-        
-        upload_button.click(
-            chat_interface.initialize_rag,
-            inputs=[pdf_input],
-            outputs=[status]
-        )
     
     return demo
 
