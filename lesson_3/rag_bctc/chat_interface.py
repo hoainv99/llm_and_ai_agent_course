@@ -1,6 +1,6 @@
 import os
 import gradio as gr
-from src.rag_system import RAGSystem
+from src.rag_qdrant import RAGSystem
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,41 +13,30 @@ class ChatInterface:
     def initialize_rag(self):
         """"""
         try:
-            self.rag = RAGSystem(collection_name=os.getenv("collection_name"),vector_store_type="qdrant")
+            print("collection:", os.getenv("collection_name"))
+            self.rag = RAGSystem(collection_name=os.getenv("collection_name"))
             self.rag.setup_qa_chain()
+            print("init RAG success")
         except Exception as e:
             return f"Error init RAG system: {str(e)}"
     
-    def respond(self, message, history):
+    def respond(self, message, history=None):
         """Generate response for the chat message"""
         if self.rag is None:
             return "Please upload a PDF file first."
         
         try:
-            # Add current message to history
-            self.chat_history.append({"role": "user", "content": message})
-            
-            # Create context from history
-            history_context = "\n".join([
-                f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
-                for msg in self.chat_history[-5:]  # Use last 5 messages for context
-            ])
-            
-            # Add history context to the query
-            query_with_history = f"""Previous conversation:
-{history_context}
-
-Current question: {message}"""
-            
             # Get response from RAG system
             result = self.rag.query(message)
-            print(result)
-            # Add response to history
-            self.chat_history.append({"role": "assistant", "content": result["result"].content})
-            
+
             return result["result"].content
         except Exception as e:
             return f"Error generating response: {str(e)}"
+
+    def clear_history(self):
+        """Clear the chat and RAG system history"""
+        if self.rag is not None:
+            self.rag.clear_history()
 
 def create_interface():
     chat_interface = ChatInterface()
@@ -59,15 +48,22 @@ def create_interface():
         with gr.Row():
             with gr.Column():
                 chatbot = gr.ChatInterface(
-                    chat_interface.respond,
+                    fn=chat_interface.respond,
                     title="Chat with your PDF",
                     description="Ask questions about your PDF content",
                     theme="soft",
                     examples=[
-                        "Đối tượng áp dụng là những ai?",
-                        "Nội dung bao gồm những điều gì?",
-                        "Điều 10 nói về điều gì?"
+                        "Tài liệu này nói về điều gì?",
+                        "Hãy liệt kê các nội dung chính trong tài liệu",
                     ]
+                )
+                clear_btn = gr.Button("Clear History")
+                def clear_all():
+                    chat_interface.clear_history()
+                    return None
+                clear_btn.click(
+                    clear_all,
+                    outputs=[chatbot],
                 )
     
     return demo

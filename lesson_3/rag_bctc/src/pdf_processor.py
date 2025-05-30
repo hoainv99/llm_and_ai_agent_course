@@ -38,7 +38,7 @@ def split_law_text(text: str) -> List[Dict[str, str]]:
         i += 2
     return structured
 
-def load_and_split_pdf(pdf_path: str, chunk_size: int = 500, chunk_overlap: int = 50) -> List:
+def load_and_split_pdf(pdf_path: str, parent_retriver = True ) -> List:
     """
     Load a PDF file and split it into chunks.
     
@@ -50,9 +50,10 @@ def load_and_split_pdf(pdf_path: str, chunk_size: int = 500, chunk_overlap: int 
     Returns:
         List: List of document chunks
     """
-    chunk_size = int(os.getenv("chunk_size","500"))
-    chunk_overlap = int(os.getenv("chunk_overlap","50"))
-
+    chunk_size_child = int(os.getenv("chunk_size_child","500"))
+    chunk_overlap_child = int(os.getenv("chunk_overlap_child","50"))
+    chunk_size_parent = int(os.getenv("chunk_size_parent","5000"))
+    chunk_overlap_parent = int(os.getenv("chunk_overlap_parent","500"))
     try:
         # Convert string path to Path object
         pdf_path = Path(pdf_path)
@@ -67,7 +68,8 @@ def load_and_split_pdf(pdf_path: str, chunk_size: int = 500, chunk_overlap: int 
             raise ValueError(f"No content found in PDF: {pdf_path}")
         
         # Split text into chunks
-        text_splitter = RecursiveCharacterTextSplitter(
+        
+        text_splitter_child = RecursiveCharacterTextSplitter(
             separators=[
                         "\nChương [IVXLCDM]+\n",  # Ưu tiên tách theo tiêu đề Chương
                         "\nĐiều \d+\.",          # Ưu tiên tách theo tiêu đề Điều
@@ -76,29 +78,40 @@ def load_and_split_pdf(pdf_path: str, chunk_size: int = 500, chunk_overlap: int 
                         " ",                     # Khoảng trắng (tách từ)
                         ""                       # Tách ký tự cuối cùng
                     ],
-            chunk_size=chunk_size,             # Kích thước tối đa của mỗi chunk (vẫn hợp lý)
-            chunk_overlap=chunk_overlap,           # Số lượng ký tự trùng lặp giữa các chunk (vẫn hợp lý)
+            chunk_size=chunk_size_child,             # Kích thước tối đa của mỗi chunk (vẫn hợp lý)
+            chunk_overlap=chunk_overlap_child,           # Số lượng ký tự trùng lặp giữa các chunk (vẫn hợp lý)
             length_function=len,         # Hàm tính độ dài của chunk
             is_separator_regex=True      # Bật chế độ regex cho separators
             )
-        
-        chunks = text_splitter.split_documents(pages)
+        chunks_child = text_splitter_child.split_documents(pages)
         # Add unique id to each chunk's metadata
-        new_chunks= []
-        for idx, chunk in enumerate(chunks):
-            if len(chunk.page_content) < chunk_overlap and chunk.metadata["page"] + 1 == chunks[idx+1].metadata["page"]:
+        total_chunks= []
+        for idx, chunk in enumerate(chunks_child):
+            if len(chunk.page_content) < chunk_overlap_child and chunk.metadata["page"] + 1 == chunks_child[idx+1].metadata["page"]:
                 continue
             # Use a combination of source, page, and chunk index for uniqueness if available
             source = chunk.metadata.get("source", str(pdf_path))
             page = chunk.metadata.get("page", 0)
             chunk.metadata["id"] = f"{source}:{page}:{idx}"
-            new_chunks.append(chunk)
-        # for i, doc in enumerate(chunks[:5]):
-        #     print(f"=== Chunk {i} ===")
-        #     print(doc.page_content)
-        #     print()
-        # assert False
-        return new_chunks
+            total_chunks.append(chunk)
+            
+        if parent_retriver:
+            text_splitter_parent = RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size_parent,             # Kích thước tối đa của mỗi chunk (vẫn hợp lý)
+                chunk_overlap=chunk_overlap_parent,           # Số lượng ký tự trùng lặp giữa các chunk (vẫn hợp lý)
+                length_function=len,         # Hàm tính độ dài của chunk
+                )
+            chunks_parent = text_splitter_parent.split_documents(pages)
+
+            for idx, chunk in enumerate(chunks_parent):
+                if len(chunk.page_content) < chunk_overlap_parent and chunk.metadata["page"] + 1 == chunks_parent[idx+1].metadata["page"]:
+                    continue
+                # Use a combination of source, page, and chunk index for uniqueness if available
+                source = chunk.metadata.get("source", str(pdf_path))
+                page = chunk.metadata.get("page", 0)
+                chunk.metadata["id"] = f"{source}:{page}:{idx}"
+                total_chunks.append(chunk)
+        return total_chunks
         
     except Exception as e:
         raise Exception(f"Error processing PDF {pdf_path}: {str(e)}") 

@@ -1,26 +1,18 @@
 import os
-from typing import List, Literal, Optional
+import sys
+from typing import List
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from langchain.vectorstores import Chroma
-from langchain.retrievers.multi_vector import MultiVectorRetriever
-from langchain.retrievers import ParentDocumentRetriever
 from langchain.schema.document import Document
-from langchain.storage import InMemoryByteStore, InMemoryStore
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from pdf_processor import load_and_split_pdf
-from vector_storage import QdrantVectorStore, FAISSVectorStore
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains import create_retrieval_chain
-from langchain import hub
+from src.pdf_processor import load_and_split_pdf
+from src.vector_storage import QdrantVectorStore
 load_dotenv("../.env")
-
 class RAGSystem:
     def __init__(
         self,
         collection_name: str = "pdf_documents",
+        parent_retriver: bool = False
     ):
         """
         Initialize the RAG system.
@@ -48,8 +40,8 @@ class RAGSystem:
         )
 
         self.collection_name = collection_name
-        self.vectorstore = QdrantVectorStore(collection_name=self.collection_name)
-
+        self.vectorstore = QdrantVectorStore(collection_name=self.collection_name, parent_retriver=parent_retriver)
+        self.history = ""
     
     def add_documents(self, documents: List[Document]):
         """
@@ -63,33 +55,36 @@ class RAGSystem:
         Set up the QA chain with a custom prompt.
         """
         # Custom prompt template
-        prompt_template = """Use the following pieces of context to answer the question about the story at the end.
+        prompt_template = """Use the following history of this conversation and pieces of context to answer the question about the story at the end.
             If the context doesn't provide enough information, just say that you don't know, don't try to make up an answer.
             Pay attention to the context of the question rather than just looking for similar keywords in the corpus.
-            Use three sentences maximum and keep the answer as concise as possible.
             Always say "thanks for asking!" at the end of the answer. Generate answer by only Vietnamese.
-            {context}
+            \n---\n
+            History: {history}
+            \n---\n
+            Context: {context}
+            \n---\n
             Question: {question}
             Helpful Answer:
             """
 
         PROMPT = PromptTemplate(
-            template=prompt_template, input_variables=["context", "question"]
+            template=prompt_template, input_variables=["history", "context", "question"]
         )
 
         def qa_chain(question):
 
             results = self.vectorstore.get_relevant_documents(question, k=10)
 
-            print(results)
             # Concatenate context from docs
             context = "\n---\n".join([
                 doc["text"] for doc in results
             ])
             # Format the prompt
-            prompt = PROMPT.format(context=context, question=question)
+            prompt = PROMPT.format(history=self.history, context=context, question=question)
             # Get LLM response
             answer = self.llm.invoke(prompt)
+            self.history += f"query: {question} \n answer: {answer.content}"
             # Return answer and source documents
             return {
                 "result": answer,
@@ -109,15 +104,18 @@ class RAGSystem:
         """
         result = self.qa_chain(question)
         return result
+    
+    def clear_history(self):
+        self.history = ""
 
 def main():
 
     rag = RAGSystem(
-        collection_name="thue_tncn"
+        collection_name="thue_tncn", parent_retriver = False
     )
     # Load and process PDF
     pdf_path = "../data/thue_tncn.pdf"  # Replace with your PDF path
-    documents = load_and_split_pdf(pdf_path)
+    documents = load_and_split_pdf(pdf_path, parent_retriver = True)
 
     # Add documents to the vector store (supports ParentDocumentRetriever)
     # rag.add_documents(documents)
@@ -126,7 +124,7 @@ def main():
     rag.setup_qa_chain()
 
     # Example query
-    question = "Thu nhập từ tiền lương, tiền công là thu nhập người lao động nhận được từ người sử dụng lao động, bao gồm:"
+    question = "thuế suất được tính như thế nào"
     result = rag.query(question)
     print(result)
     print(f"Question: {question}")

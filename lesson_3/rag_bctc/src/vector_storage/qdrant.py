@@ -13,6 +13,7 @@ class QdrantVectorStore:
     def __init__(
         self,
         collection_name: str,
+        parent_retriver: bool,
         qdrant_url: Optional[str] = None
     ):
         """
@@ -24,6 +25,7 @@ class QdrantVectorStore:
             qdrant_url (str): URL of the Qdrant server
         """
         self.collection_name = collection_name
+        self.parent_retriver = parent_retriver
         self.vector_size = os.getenv("vector_size", 768)
         self.qdrant_url = qdrant_url or os.getenv("QDRANT_URL", "http://localhost:6333")
         print("qdrant_url",self.qdrant_url)
@@ -132,6 +134,17 @@ class QdrantVectorStore:
         except Exception as e:
             print(f"Error adding documents: {str(e)}")
             return False
+        
+    def search(self, query: str, k: int = 5):
+        query_embedding = self.embeddings.embed_query(query)
+
+        # Search for similar vectors
+        results = self.client.search(
+            collection_name=self.collection_name,
+            query_vector=query_embedding,
+            limit=k
+        )
+        return results
     
     def get_relevant_documents(self, query: str, k: int = 5) -> List[Dict]:
         """
@@ -145,19 +158,17 @@ class QdrantVectorStore:
             List[Dict]: List of similar documents with scores
         """
         try:
-            # Generate embedding for the query
-            query_embedding = self.embeddings.embed_query(query)
-            print("query_embedding",len(query_embedding))
             # Search for similar vectors
-            search_result = self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_embedding,
-                limit=k
-            )
-            
+            child_results = self.search(query, k)
+            parent_results = []
+            if self.parent_retriver:
+                for child_rs in child_results:
+                    rs = self.search(child_rs.payload["text"], k=1)
+                    parent_results.extend(rs)
             # Format results
+            total_rs = child_results + parent_results
             results = []
-            for scored_point in search_result:
+            for scored_point in total_rs:
                 results.append({
                     "text": scored_point.payload["text"],
                     "metadata": scored_point.payload.get("metadata", {}),

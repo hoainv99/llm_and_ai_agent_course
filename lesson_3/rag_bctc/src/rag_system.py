@@ -45,8 +45,8 @@ class RAGSystem:
         self.llm = ChatGoogleGenerativeAI(
             model=os.getenv("llm_model", "gemini-2.0-flash"),
             google_api_key=os.getenv("GOOGLE_API_KEY"),
-            temperature=0.0,
-            convert_system_message_to_human=True
+            temperature=0.0
+            # convert_system_message_to_human=True
         )
 
         # Initialize embeddings
@@ -176,7 +176,13 @@ class RAGSystem:
         document_qa_chain = create_stuff_documents_chain(self.llm, answer_prompt)
 
         self.qa_chain = create_retrieval_chain(self.retriever, document_qa_chain)
-
+        # self.qa_chain = RetrievalQA.from_chain_type(
+        #     llm=self.llm,
+        #     retriever=self.retriever,
+        #     chain_type="stuff",
+        #     return_source_documents=True,
+        #     chain_type_kwargs={"prompt": answer_prompt} # Pass the custom prompt here
+        # )
     # def setup_qa_chain(self):
     #     """
     #     Set up the QA chain with a custom prompt.
@@ -263,10 +269,10 @@ def main():
         collection_name="thue_tncn",
         vector_store_type="chroma",
         use_multi_vector=False,
-        use_parent_document=False,
+        use_parent_document=True,
         parent_splitter=parent_splitter,
         child_splitter=child_splitter,
-        search_type="mmr",         # Set search type to MMR
+        search_type="similarity",         # Set search type to MMR
         mmr_lambda_mult=0.7,       # Adjust lambda_mult (e.g., 0.7 for more relevance bias)
         k_retrieve=5               # Retrieve 5 documents
     )
@@ -283,7 +289,7 @@ def main():
     rag.setup_qa_chain()
 
     # Example query
-    question = "nội dung của Điều 1. Người nộp thuế"
+    question = "Các khoản thu nhập chịu thuế"
     result = rag.query(question)
     print(result)
     print(f"Question: {question}")
