@@ -5,14 +5,12 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain.prompts import PromptTemplate
 from langchain.schema.document import Document
-from src.pdf_processor import load_and_split_pdf
-from src.vector_storage import QdrantVectorStore
+from src.vector_store import QdrantVectorStore
 load_dotenv("../.env")
 class RAGSystem:
     def __init__(
         self,
-        collection_name: str = "pdf_documents",
-        parent_retriver: bool = False
+        collection_name: str = "pdf_documents"
     ):
         """
         Initialize the RAG system.
@@ -36,11 +34,12 @@ class RAGSystem:
         # Initialize embeddings
         self.embeddings = GoogleGenerativeAIEmbeddings(
             model=os.getenv("embedding_model", "models/embedding-001"),
-            google_api_key=os.getenv("GOOGLE_API_KEY")
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            task_type = "RETRIEVAL_QUERY"
         )
 
         self.collection_name = collection_name
-        self.vectorstore = QdrantVectorStore(collection_name=self.collection_name, parent_retriver=parent_retriver)
+        self.vectorstore = QdrantVectorStore(collection_name=self.collection_name, embeddings=self.embeddings)
         self.history = ""
     
     def add_documents(self, documents: List[Document]):
@@ -60,6 +59,7 @@ class RAGSystem:
             If the context doesn't provide enough information, just say that you don't know, don't try to make up an answer.
             Pay attention to the context of the question rather than just looking for similar keywords in the corpus.
             Always say "thanks for asking!" at the end of the answer. Generate answer by only Vietnamese.
+            Please reranking following context given query as question before answer the question. each context was separated by "---"
             \n---\n
             History: {history}
             \n---\n
@@ -75,7 +75,7 @@ class RAGSystem:
 
         def qa_chain(question):
 
-            results = self.vectorstore.get_relevant_documents(question, k=10)
+            results = self.vectorstore.get_relevant_documents(question, k=int(os.getenv("top_k",10)))
 
             # Concatenate context from docs
             context = "\n---\n".join([
@@ -111,16 +111,8 @@ class RAGSystem:
 
 def main():
 
-    rag = RAGSystem(
-        collection_name="thue_tncn", parent_retriver = False
-    )
+    rag = RAGSystem(collection_name="thue")
     # Load and process PDF
-    pdf_path = "../data/thue_tncn.pdf"  # Replace with your PDF path
-    documents = load_and_split_pdf(pdf_path, parent_retriver = True)
-
-    # Add documents to the vector store (supports ParentDocumentRetriever)
-    # rag.add_documents(documents)
-
     # Setup QA chain
     rag.setup_qa_chain()
 

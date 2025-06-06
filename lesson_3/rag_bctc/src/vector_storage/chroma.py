@@ -16,7 +16,7 @@ class ChromaVectorStore:
     adding/updating chunks in the Chroma database, and clearing the database.
     """
 
-    def __init__(self, chroma_path: str = "chroma", data_path: str = "data"):
+    def __init__(self, vector_size: str = "chroma", data_path: str = "data"):
         """
         Initializes the ChromaVectorStore.
 
@@ -24,46 +24,13 @@ class ChromaVectorStore:
             chroma_path (str): The directory path where the ChromaDB will be persisted.
             data_path (str): The directory path containing the PDF documents to load.
         """
-        self.chroma_path = chroma_path
+        self.chroma_path = os.getenv()
         self.data_path = data_path
         self.embeddings = GoogleGenerativeAIEmbeddings(
             model=os.getenv("embedding_model", "models/embedding-001"),
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             max_tokens=self.vector_size
         )
-    def _load_documents(self) -> list[Document]:
-        """
-        Loads PDF documents from the specified data path.
-
-        Returns:
-            list[Document]: A list of loaded Langchain Document objects.
-        """
-        print(f"Loading documents from: {self.data_path}")
-        document_loader = PyPDFDirectoryLoader(self.data_path)
-        documents = document_loader.load()
-        print(f"Loaded {len(documents)} documents.")
-        return documents
-
-    def _split_documents(self, documents: list[Document]) -> list[Document]:
-        """
-        Splits the loaded documents into smaller chunks.
-
-        Args:
-            documents (list[Document]): A list of Langchain Document objects to split.
-
-        Returns:
-            list[Document]: A list of chunked Langchain Document objects.
-        """
-        print(f"Splitting {len(documents)} documents into chunks...")
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=800,
-            chunk_overlap=80,
-            length_function=len,
-            is_separator_regex=False,
-        )
-        chunks = text_splitter.split_documents(documents)
-        print(f"Created {len(chunks)} chunks.")
-        return chunks
 
     def _calculate_chunk_ids(self, chunks: list[Document]) -> list[Document]:
         """
